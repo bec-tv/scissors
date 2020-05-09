@@ -1,19 +1,9 @@
 
 // #![allow(unused_variables)]
 
-use std::os::raw::{c_char, c_void};
-// use winapi::um::winuser::*;
-// use winapi::um::libloaderapi::*;
-use std::ptr::{null_mut};
+use std::os::raw::{c_char};
 use resvg::prelude::*;
 use std::error::Error;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
-
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
-use std::iter::once;
-
 use winit::{
   event::{Event, WindowEvent},
   event_loop::{ControlFlow, EventLoop},
@@ -24,15 +14,6 @@ use winit::{
 
 mod obs;
 use obs::{Scene, Source, Data, Output};
-
-
-// unsafe extern fn render_window(data: *mut c_void, cx: u32, cy: u32) {
-//   obs::render_main_texture();
-// }
-
-fn win32_string( value : &str ) -> Vec<u16> {
-  OsStr::new( value ).encode_wide().chain( once( 0 ) ).collect()
-}
 
 fn maifn() -> Result<(), Box<dyn Error>> {
   {
