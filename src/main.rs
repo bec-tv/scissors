@@ -53,13 +53,13 @@ fn main() {
 
 
       // output_format: video_format_VIDEO_FORMAT_UYVY,
-      output_format: video_format_VIDEO_FORMAT_BGRA,
+      output_format: video_format_VIDEO_FORMAT_NV12,
 
       adapter: 0,
 
       gpu_conversion: true,
 
-      colorspace: video_colorspace_VIDEO_CS_709,
+      colorspace: video_colorspace_VIDEO_CS_DEFAULT,
 
       range: video_range_type_VIDEO_RANGE_DEFAULT,
       scale_type: obs_scale_type_OBS_SCALE_DISABLE,
@@ -118,10 +118,56 @@ fn main() {
   obs_sceneitem_set_pos(item, pos.as_mut_ptr());
 
   let settings = obs_data_create();
-  obs_data_set_string(settings, "local_file\0".as_ptr() as *const c_char, "../../../../cap.mkv\0".as_ptr() as *const c_char);
-  obs_data_set_bool(settings, "looping\0".as_ptr() as *const c_char, true);
+  // obs_data_set_string(settings, "device_name\0".as_ptr() as *const c_char, "DeckLink Quad (1)\0".as_ptr() as *const c_char);
+  // obs_data_set_string(settings, "device_hash\0".as_ptr() as *const c_char, "3854888880_DeckLink Quad 2\0".as_ptr() as *const c_char);
+  // obs_data_set_string(settings, "mode_name\0".as_ptr() as *const c_char, "Auto\0".as_ptr() as *const c_char);
+  // obs_data_set_int(settings, "mode_id\0".as_ptr() as *const c_char, -1);
+  // obs_data_set_int(settings, "audio_connection\0".as_ptr() as *const c_char, 1);
+  // obs_data_set_int(settings, "video_connection\0".as_ptr() as *const c_char, 1);
 
-  let vi_source = obs_source_create("ffmpeg_source\0".as_ptr() as *const c_char, "video\0".as_ptr() as *const c_char, settings, null_mut());
+  // obs_data_set_bool(settings, "looping\0".as_ptr() as *const c_char, true);
+
+  // let vi_source = obs_source_create("ffmpeg_source\0".as_ptr() as *const c_char, "video\0".as_ptr() as *const c_char, settings, null_mut());
+  let vi_source = obs_source_create("decklink-input\0".as_ptr() as *const c_char, "video\0".as_ptr() as *const c_char, null_mut(), null_mut());
+
+  let props = obs_source_properties(vi_source);
+  let prop = obs_properties_get(props, "device_hash\0".as_ptr() as *const c_char);
+  println!("{}", obs_property_list_item_count(prop));
+
+  for i in 0..obs_property_list_item_count(prop) {
+    println!("{}", CStr::from_ptr(obs_property_list_item_name(prop, i)).to_str().unwrap());
+    println!("{}", CStr::from_ptr(obs_property_list_item_string(prop, i)).to_str().unwrap());
+  }
+
+  let dname = obs_property_list_item_name(prop, 1);
+  let dstr = obs_property_list_item_string(prop, 1);
+
+  println!("Using: {}", CStr::from_ptr(dname).to_str().unwrap());
+  println!("Using: {}", CStr::from_ptr(dstr).to_str().unwrap());
+
+  let settings = obs_data_create();
+  obs_data_set_string(settings, "device_name\0".as_ptr() as *const c_char, dname);
+  obs_data_set_string(settings, "device_hash\0".as_ptr() as *const c_char, dstr);
+  obs_data_set_string(settings, "mode_name\0".as_ptr() as *const c_char, "Auto\0".as_ptr() as *const c_char);
+  obs_data_set_int(settings, "mode_id\0".as_ptr() as *const c_char, -1);
+  obs_data_set_int(settings, "audio_connection\0".as_ptr() as *const c_char, 1);
+  obs_data_set_int(settings, "video_connection\0".as_ptr() as *const c_char, 1);
+
+
+  obs_source_update(vi_source, settings);
+
+  // let prop = obs_properties_get(props, "mode_id\0".as_ptr() as *const c_char);
+  // for i in 0..obs_property_list_item_count(prop) {
+  //   println!("{}", CStr::from_ptr(obs_property_list_item_name(prop, i)).to_str().unwrap());
+  //   println!("{}", CStr::from_ptr(obs_property_list_item_string(prop, i)).to_str().unwrap());
+  // }
+
+  // obs_data_set_string(settings, "device_hash\0".as_ptr() as *const c_char, obs_property_list_item_string(prop, 0));
+  // obs_source_update(vi_source, settings);
+
+
+  // panic!();
+
 
   let item = obs_scene_add(scene, vi_source);
 
@@ -218,7 +264,7 @@ fn main() {
   };
 
   unsafe {
-    obs_display_add_draw_callback(display, Some(render_window), obs_scene_get_source(scene) as *mut c_void);  
+    obs_display_add_draw_callback(display, Some(render_window), obs_scene_get_source(scene) as *mut c_void);
 
     // let vencoder = obs_video_encoder_create("obs_x264\0".as_ptr() as *const c_char, "test_x264\0".as_ptr() as *const c_char, null_mut(), null_mut());
 	  // let aencoder = obs_audio_encoder_create("ffmpeg_aac\0".as_ptr() as *const c_char, "test_aac\0".as_ptr() as *const c_char, null_mut(), 0, null_mut());
@@ -226,15 +272,44 @@ fn main() {
     // obs_encoder_set_video(vencoder, obs_get_video());
     // obs_encoder_set_audio(aencoder, obs_get_audio());
 
+    let output = obs_output_create("decklink_output\0".as_ptr() as *const c_char, "decklink output\0".as_ptr() as *const c_char, null_mut(), null_mut());
+
+    let props = obs_source_properties(vi_source);
+    let prop = obs_properties_get(props, "device_hash\0".as_ptr() as *const c_char);
+    let prop_count = obs_property_list_item_count(prop);
+    println!("{}", prop_count);
+
+    for i in 0..prop_count {
+      println!("{}", CStr::from_ptr(obs_property_list_item_name(prop, i)).to_str().unwrap());
+      println!("{}", CStr::from_ptr(obs_property_list_item_string(prop, i)).to_str().unwrap());
+    }
+
+    let dname = obs_property_list_item_name(prop, prop_count - 1);
+    let dstr = obs_property_list_item_string(prop, prop_count - 1);
+
+    println!("Output using: {}", CStr::from_ptr(dname).to_str().unwrap());
+    println!("Output using: {}", CStr::from_ptr(dstr).to_str().unwrap());
+
+    let settings = obs_data_create();
+    obs_data_set_string(settings, "device_name\0".as_ptr() as *const c_char, dname);
+    obs_data_set_string(settings, "device_hash\0".as_ptr() as *const c_char, dstr);
+    obs_data_set_string(settings, "mode_name\0".as_ptr() as *const c_char, "1080i59.94\0".as_ptr() as *const c_char);
+    obs_data_set_int(settings, "mode_id\0".as_ptr() as *const c_char, 12);
+    // obs_data_set_int(settings, "audio_connection\0".as_ptr() as *const c_char, 1);
+    // obs_data_set_int(settings, "video_connection\0".as_ptr() as *const c_char, 1);
+
+    // "mode_id": 12,
+    // "mode_name": "1080i59.94",
 
     // let settings = obs_data_create();
     // obs_data_set_string(settings, "path\0".as_ptr() as *const c_char, "test.flv\0".as_ptr() as *const c_char);
-    // let output = obs_output_create("flv_output\0".as_ptr() as *const c_char, "test output\0".as_ptr() as *const c_char, settings, null_mut());
-    
+
     // obs_output_set_video_encoder(output, vencoder);
     // obs_output_set_audio_encoder(output, aencoder, 0);
-    
-    // println!("{}", obs_output_start(output));
+
+    obs_output_update(output, settings);
+
+    println!("{}", obs_output_start(output));
 
 
     loop {

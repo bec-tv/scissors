@@ -64,7 +64,7 @@ def build(args):
     os.makedirs('obs-studio/build')
 
     log(MESSAGE, 'Running CMake')
-    process = subprocess.Popen(['cmake', '..', '-G', 'Visual Studio 15 2017 Win64', '-DCMAKE_BUILD_TYPE={}'.format(build_type), '-DDepsPath={}'.format(os.path.abspath('deps/win64')), '-DENABLE_UI=FALSE', '-DDISABLE_UI=TRUE', '-DENABLE_SCRIPTING=FALSE'], cwd='obs-studio/build', shell=use_shell)
+    process = subprocess.Popen(['cmake', '..', '-G', 'Visual Studio 16 2019', '-A', 'x64', '-DCMAKE_BUILD_TYPE={}'.format(build_type), '-DDepsPath={}'.format(os.path.abspath('deps/win64')), '-DENABLE_UI=FALSE', '-DDISABLE_UI=TRUE', '-DENABLE_SCRIPTING=FALSE'], cwd='obs-studio/build', shell=use_shell)
     process.wait()
     if process.returncode != 0:
       log(ERROR, 'CMake failed')
