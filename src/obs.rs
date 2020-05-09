@@ -71,6 +71,19 @@ impl Scene {
   }
 }
 
+impl From<*mut obs_scene_t> for Scene {
+  fn from(ptr: *mut obs_scene_t) -> Self {
+    unsafe { obs_scene_addref(ptr) }
+    Self { ptr }
+  }
+}
+
+impl Clone for Scene {
+  fn clone(&self) -> Self {
+    Self::from(self.ptr)
+  }
+}
+
 impl Drop for Scene {
   fn drop(&mut self) {
     unsafe {
@@ -108,6 +121,12 @@ impl From<*mut obs_sceneitem_t> for SceneItem {
   }
 }
 
+impl Clone for SceneItem {
+  fn clone(&self) -> Self {
+    Self::from(self.ptr)
+  }
+}
+
 impl Drop for SceneItem {
   fn drop(&mut self) {
     unsafe {
@@ -115,6 +134,8 @@ impl Drop for SceneItem {
     }
   }
 }
+
+unsafe impl Send for SceneItem {}
 
 pub struct Source {
   ptr: *mut obs_source_t,
@@ -173,6 +194,11 @@ impl From<*mut obs_source_t> for Source {
   }
 }
 
+impl Clone for Source {
+  fn clone(&self) -> Self {
+    Self::from(self.ptr)
+  }
+}
 
 impl Drop for Source {
   fn drop(&mut self) {
@@ -181,6 +207,8 @@ impl Drop for Source {
     }
   }
 }
+
+unsafe impl Send for Source {}
 
 pub struct Data {
   ptr: *mut obs_data_t,
@@ -218,6 +246,19 @@ impl Data {
   }
 }
 
+impl From<*mut obs_data_t> for Data {
+  fn from(ptr: *mut obs_data_t) -> Self {
+    unsafe { obs_data_addref(ptr) }
+    Self { ptr }
+  }
+}
+
+impl Clone for Data {
+  fn clone(&self) -> Self {
+    Self::from(self.ptr)
+  }
+}
+
 impl Drop for Data {
   fn drop(&mut self) {
     unsafe {
@@ -248,6 +289,12 @@ impl Properties {
 impl From<*mut obs_properties_t> for Properties {
   fn from(ptr: *mut obs_properties_t) -> Self {
     Self { ptr }
+  }
+}
+
+impl Clone for Properties {
+  fn clone(&self) -> Self {
+    Self::from(self.ptr)
   }
 }
 
@@ -346,11 +393,73 @@ impl From<*mut obs_output_t> for Output {
   }
 }
 
+impl Clone for Output {
+  fn clone(&self) -> Self {
+    Self::from(self.ptr)
+  }
+}
+
 
 impl Drop for Output {
   fn drop(&mut self) {
     unsafe {
       obs_output_release(self.ptr);
+    }
+  }
+}
+
+pub struct Display {
+  ptr: *mut obs_display_t,
+}
+
+impl Display {
+  pub fn new(graphics_data: *mut gs_init_data, color: u32) -> Result<Self, Box<dyn Error>> {
+    let ptr = unsafe {
+      obs_display_create(graphics_data, color)
+    };
+
+    if ptr == null_mut() {
+      Err(Box::new(NullError))
+    } else {
+      Ok(Self { ptr })
+    }
+  }
+
+  pub fn add_draw_callback<F>(&self, callback: &mut F)
+  where
+    F: FnMut(u32, u32) + Send
+  {
+    extern "C" fn draw_callback<F>(data: *mut c_void, x: u32, y: u32)
+    where
+      F: FnMut(u32, u32) + Send,
+    {
+      let closure: &mut F = unsafe { &mut *(data as *mut F) };
+      (*closure)(x, y);
+    }
+
+    unsafe {
+      obs_display_add_draw_callback(self.ptr, Some(draw_callback::<F>), callback as *mut F as *mut c_void);
+    }
+  }
+
+  pub fn resize(&self, cx: u32, cy: u32) {
+    unsafe {
+      obs_display_resize(self.ptr, cx, cy);
+    }
+  }
+}
+
+impl From<*mut obs_display_t> for Display {
+  fn from(ptr: *mut obs_display_t) -> Self {
+    Self { ptr }
+  }
+}
+
+
+impl Drop for Display {
+  fn drop(&mut self) {
+    unsafe {
+      obs_display_destroy(self.ptr);
     }
   }
 }
@@ -398,21 +507,3 @@ pub fn render_main_texture() {
     obs_render_main_texture();
   }
 }
-
-pub fn display_add_draw_callback<F>(display: *mut obs_display_t, callback: &mut F)
-where
-  F: FnMut(u32, u32) + Send
-{
-  extern "C" fn draw_callback<F>(data: *mut c_void, x: u32, y: u32)
-  where
-    F: FnMut(u32, u32) + Send,
-  {
-    let closure: &mut F = unsafe { &mut *(data as *mut F) };
-    (*closure)(x, y);
-  }
-
-  unsafe {
-    obs_display_add_draw_callback(display, Some(draw_callback::<F>), callback as *mut F as *mut c_void);
-  }
-}
-

@@ -2,15 +2,25 @@
 // #![allow(unused_variables)]
 
 use std::os::raw::{c_char, c_void};
-use winapi::um::winuser::*;
-use winapi::um::libloaderapi::*;
+// use winapi::um::winuser::*;
+// use winapi::um::libloaderapi::*;
 use std::ptr::{null_mut};
 use resvg::prelude::*;
 use std::error::Error;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 use std::iter::once;
+
+use winit::{
+  event::{Event, WindowEvent},
+  event_loop::{ControlFlow, EventLoop},
+  window::WindowBuilder,
+  platform::windows::WindowExtWindows,
+  dpi::PhysicalSize,
+};
 
 mod obs;
 use obs::{Scene, Source, Data, Output};
@@ -44,7 +54,7 @@ fn maifn() -> Result<(), Box<dyn Error>> {
         gpu_conversion: true,
         colorspace: obs::video_colorspace_VIDEO_CS_DEFAULT,
         range: obs::video_range_type_VIDEO_RANGE_DEFAULT,
-        scale_type: obs::obs_scale_type_OBS_SCALE_DISABLE,
+        scale_type: obs::obs_scale_type_OBS_SCALE_BICUBIC,
       })))
     };
 
@@ -131,72 +141,89 @@ fn maifn() -> Result<(), Box<dyn Error>> {
     item.set_scale(width / if is_4by3 { 1440.0 } else { 1920.0 }, height / 1080.0);
     item.set_pos(x, y);
 
+    let filter;
     if is_4by3 {
       let settings = Data::new()?;
       settings.set_int("left", 240)?;
       settings.set_int("right", 240)?;
 
-      let filter = Source::new("crop_filter", "crop", Some(&settings), None)?;
-      vi_source.filter_add(&filter);
+      filter = Some(Source::new("crop_filter", "crop", Some(&settings), None)?);
+      vi_source.filter_add(&filter.as_ref().unwrap());
+    } else {
+      filter = None;
     }
+
+    // let item = item.clone();
+    // let filter = filter.map_or(None, |x| Some(x.clone()));
+    // std::thread::spawn(move || {
+    //   let mut x = x;
+    //   let mut y = y;
+
+    //   let mut width = width;
+    //   let mut height = height;
+
+    //   let mut crop: f64 = 480.0;
+
+    //   loop {
+    //     if crop > 0.0 {
+    //       crop -= 1.6;
+    //       width += 3.2;
+    //     } else {
+    //       crop = 0.0;
+    //     }
+
+    //     if x >= 0.0 {
+    //       x -= 1.6;
+    //     }
+
+    //     if y >= 0.0 {
+    //       y -= 0.9;
+    //     }
+
+    //     if width <= 1920.0 {
+    //       width += 1.6;
+    //     }
+
+    //     if height <= 1080.0 {
+    //       height += 0.9;
+    //     }
+
+    //     item.set_scale(width / if is_4by3 { 1920.0 - (2.0 * crop as f32) } else { 1920.0 }, height / 1080.0);
+    //     item.set_pos(x, y);
+
+    //     if let Some(filter) = &filter {
+    //       let settings = Data::new().unwrap();
+    //       settings.set_int("left", crop.ceil() as i64);
+    //       settings.set_int("right", crop.ceil() as i64);
+
+    //       filter.update(Some(&settings));
+    //     }
+
+    //     std::thread::sleep_ms(16);
+    //   }
+    // });
 
     obs::set_output_source(0, &scene.get_source()?);
 
-    let name = win32_string( "name" );
-    let title = win32_string( "title" );
+    let event_loop = EventLoop::new();
+    let window = WindowBuilder::new()
+      .with_title("scissors")
+      .with_inner_size(PhysicalSize::new(1920, 1080))
+      .build(&event_loop)?;
 
-    let handle = unsafe {
-      let hinstance = GetModuleHandleW( null_mut() );
-      let wnd_class = WNDCLASSW {
-        style : CS_OWNDC | CS_HREDRAW | CS_VREDRAW,
-        lpfnWndProc : Some( DefWindowProcW ),
-        hInstance : hinstance,
-        lpszClassName : name.as_ptr(),
-        cbClsExtra : 0,
-        cbWndExtra : 0,
-        hIcon: null_mut(),
-        hCursor: null_mut(),
-        hbrBackground: null_mut(),
-        lpszMenuName: null_mut(),
-      };
+    let display = obs::Display::new(Box::into_raw(Box::new(obs::gs_init_data {
+      window: obs::gs_window { hwnd: window.hwnd() /* handle as *mut std::ffi::c_void */ },
+      cx: window.inner_size().width,
+      cy: window.inner_size().height,
+      format: obs::gs_color_format_GS_BGRA,
+      zsformat: obs::gs_zstencil_format_GS_ZS_NONE,
+      adapter: 0,
+      num_backbuffers: 0,
+    })), 0x000000)?;
 
-      RegisterClassW( &wnd_class );
-
-      CreateWindowExW(
-        0,
-        name.as_ptr(),
-        title.as_ptr(),
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT,
-        CW_USEDEFAULT,
-        1920,
-        1080,
-        null_mut(),
-        null_mut(),
-        hinstance,
-        null_mut()
-      )
-    };
-
-    let display = unsafe {
-        obs::obs_display_create(Box::into_raw(Box::new(obs::gs_init_data {
-        window: obs::gs_window { hwnd: handle as *mut std::ffi::c_void },
-        cx: 1920,
-        cy: 1080,
-        format: obs::gs_color_format_GS_BGRA,
-        zsformat: obs::gs_zstencil_format_GS_ZS_NONE,
-        adapter: 0,
-        num_backbuffers: 0,
-      })), 0x000000)
-    };
-
-    obs::display_add_draw_callback(display, &mut |x, y| {
+    display.add_draw_callback(&mut |x, y| {
       obs::render_main_texture();
     });
-
-    // unsafe {
-      // obs::obs_display_add_draw_callback(display, Some(render_window), null_mut());
-    // }
 
     // let output = Output::new("decklink_output", "decklink output", None, None)?;
 
@@ -224,17 +251,24 @@ fn maifn() -> Result<(), Box<dyn Error>> {
 
     // assert!(output.start());
 
-    unsafe {
-      loop {
-        let mut message : MSG = std::mem::uninitialized();
-        if GetMessageW( &mut message as *mut MSG, handle, 0, 0 ) > 0 {
-            TranslateMessage( &message as *const MSG );
-            DispatchMessageW( &message as *const MSG );
-        } else {
-            break;
+    event_loop.run(move |event, _, control_flow| {
+      *control_flow = ControlFlow::Wait;
+
+      match event {
+        Event::WindowEvent {
+          event: WindowEvent::CloseRequested,
+          window_id,
+        } if window_id == window.id() => *control_flow = ControlFlow::Exit,
+        
+        Event::WindowEvent {
+          event: WindowEvent::Resized(size),
+          window_id,
+        } if window_id == window.id() => {
+          display.resize(size.width, size.height);
         }
+        _ => (),
       }
-    }
+    });
   }
 
   unsafe {
