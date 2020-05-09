@@ -10,7 +10,7 @@ use std::fmt;
 use std::error::Error;
 use std::ptr::{null, null_mut};
 use std::mem::MaybeUninit;
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 
 #[derive(Debug, Clone)]
 pub struct NullError;
@@ -380,3 +380,39 @@ pub fn set_output_source(index: u32, source: &Source) {
     obs_set_output_source(index, source.ptr);
   }
 }
+
+pub fn load_all_modules() {
+  unsafe {
+    obs_load_all_modules();
+  }
+}
+
+pub fn post_load_modules() {
+  unsafe {
+    obs_post_load_modules();
+  }
+}
+
+pub fn render_main_texture() {
+  unsafe {
+    obs_render_main_texture();
+  }
+}
+
+pub fn display_add_draw_callback<F>(display: *mut obs_display_t, callback: &mut F)
+where
+  F: FnMut(u32, u32) + Send
+{
+  extern "C" fn draw_callback<F>(data: *mut c_void, x: u32, y: u32)
+  where
+    F: FnMut(u32, u32) + Send,
+  {
+    let closure: &mut F = unsafe { &mut *(data as *mut F) };
+    (*closure)(x, y);
+  }
+
+  unsafe {
+    obs_display_add_draw_callback(display, Some(draw_callback::<F>), callback as *mut F as *mut c_void);
+  }
+}
+
