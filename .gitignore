@@ -1,0 +1,7 @@
+/build
+/cbuild
+/obs-studio
+/deps
+
+/target
+/Cargo.lock
