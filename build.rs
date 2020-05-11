@@ -9,16 +9,15 @@ fn main() {
     .status()
     .expect("failed to execute build script");
 
-  // println!("cargo:rustc-link-search=obs-studio/build/libobs/RelWithDebInfo");
-  // println!("cargo:rustc-link-search=cbuild/Debug");
-  println!("cargo:rustc-link-search=C:/Qt/5.14.2/msvc2017_64/lib");
+  let qt_version = "5.10.1";
+  let qt_path = format!("deps/qt/{}/msvc2017_64", qt_version);
 
-  println!("cargo:rustc-link-lib=obs-studio/build/libobs/RelWithDebInfo/obs");
-  println!("cargo:rustc-link-lib=cbuild/RelWithDebInfo/cscissors");
-  // println!("cargo:rustc-link-lib=C:/Qt/5.14.2/msvc2017_64/lib/Qt5Widgets");
+  println!("cargo:rustc-link-search=obs-studio/build/libobs/RelWithDebInfo");
+  println!("cargo:rustc-link-search=cbuild/RelWithDebInfo");
+  println!("cargo:rustc-link-search={}/lib", qt_path);
 
-  // println!("cargo:rustc-link-lib=obs");
-  // println!("cargo:rustc-link-lib=static=scissors");
+  println!("cargo:rustc-link-lib=obs");
+  println!("cargo:rustc-link-lib=static=cscissors");
   println!("cargo:rustc-link-lib=Qt5Widgets");
   println!("cargo:rustc-link-lib=Qt5Core");
 
