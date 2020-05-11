@@ -22,6 +22,8 @@ jobs:
       with:
         path: target
         key: windows-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install LLVM
+      run: choco install llvm
     - name: Install latest nightly
       uses: actions-rs/toolchain@v1
       with:
