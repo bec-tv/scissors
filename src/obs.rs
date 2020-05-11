@@ -92,6 +92,8 @@ impl Drop for Scene {
   }
 }
 
+unsafe impl Send for Scene {}
+
 pub struct SceneItem {
   ptr: *mut obs_sceneitem_t,
 }
@@ -110,6 +112,23 @@ impl SceneItem {
     unsafe {
       scissors_vec2_set(vec.as_mut_ptr(), x, y);
       obs_sceneitem_set_pos(self.ptr, vec.as_mut_ptr());
+    }
+  }
+
+  pub fn set_visible(&self, visible: bool) {
+    unsafe {
+      obs_sceneitem_set_visible(self.ptr, visible);
+    }
+  }
+
+  pub fn set_crop(&self, left: i32, top: i32, right: i32, bottom: i32) {
+    unsafe {
+      obs_sceneitem_set_crop(self.ptr, Box::into_raw(Box::new(obs_sceneitem_crop {
+        left,
+        top,
+        right,
+        bottom,
+      })));
     }
   }
 }
@@ -244,6 +263,14 @@ impl Data {
     }
     Ok(())
   }
+
+  pub fn set_bool(&self, key: &str, value: bool) -> Result<(), Box<dyn Error>> {
+    let key = CString::new(key)?;
+    unsafe {
+      obs_data_set_bool(self.ptr, key.as_ptr(), value);
+    }
+    Ok(())
+  }
 }
 
 impl From<*mut obs_data_t> for Data {
@@ -267,6 +294,8 @@ impl Drop for Data {
   }
 }
 
+unsafe impl Send for Data {}
+
 pub struct Properties {
   ptr: *mut obs_properties_t,
 }
@@ -281,7 +310,7 @@ impl Properties {
     if ptr == null_mut() {
       Err(Box::new(NullError))
     } else {
-      Ok(Property::from(ptr))
+      Ok(Property{ ptr, parent: self })
     }
   }
 }
@@ -289,12 +318,6 @@ impl Properties {
 impl From<*mut obs_properties_t> for Properties {
   fn from(ptr: *mut obs_properties_t) -> Self {
     Self { ptr }
-  }
-}
-
-impl Clone for Properties {
-  fn clone(&self) -> Self {
-    Self::from(self.ptr)
   }
 }
 
@@ -306,11 +329,14 @@ impl Drop for Properties {
   }
 }
 
-pub struct Property {
+unsafe impl Send for Properties {}
+
+pub struct Property<'a> {
   ptr: *mut obs_property_t,
+  parent: &'a Properties,
 }
 
-impl Property {
+impl<'a> Property<'a> {
   pub fn list_item_count(&self) -> u64 {
     unsafe {
       obs_property_list_item_count(self.ptr)
@@ -339,12 +365,6 @@ impl Property {
     } else {
       Ok(unsafe { CStr::from_ptr(ptr).to_str()? })
     }
-  }
-}
-
-impl From<*mut obs_property_t> for Property {
-  fn from(ptr: *mut obs_property_t) -> Self {
-    Self { ptr }
   }
 }
 
@@ -399,7 +419,6 @@ impl Clone for Output {
   }
 }
 
-
 impl Drop for Output {
   fn drop(&mut self) {
     unsafe {
@@ -407,6 +426,8 @@ impl Drop for Output {
     }
   }
 }
+
+unsafe impl Send for Output {}
 
 pub struct Display {
   ptr: *mut obs_display_t,
@@ -463,6 +484,8 @@ impl Drop for Display {
     }
   }
 }
+
+unsafe impl Send for Display {}
 
 pub fn get_version_string() -> Result<&'static str, Box<dyn Error>> {
   unsafe {

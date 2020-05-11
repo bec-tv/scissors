@@ -9,8 +9,18 @@ fn main() {
     .status()
     .expect("failed to execute build script");
 
-  println!("cargo:rustc-link-lib=obs-studio/build/libobs/Debug/obs");
-  println!("cargo:rustc-link-lib=static=cbuild/Debug/scissors");
+  // println!("cargo:rustc-link-search=obs-studio/build/libobs/RelWithDebInfo");
+  // println!("cargo:rustc-link-search=cbuild/Debug");
+  println!("cargo:rustc-link-search=C:/Qt/5.14.2/msvc2017_64/lib");
+
+  println!("cargo:rustc-link-lib=obs-studio/build/libobs/RelWithDebInfo/obs");
+  println!("cargo:rustc-link-lib=cbuild/RelWithDebInfo/cscissors");
+  // println!("cargo:rustc-link-lib=C:/Qt/5.14.2/msvc2017_64/lib/Qt5Widgets");
+
+  // println!("cargo:rustc-link-lib=obs");
+  // println!("cargo:rustc-link-lib=static=scissors");
+  println!("cargo:rustc-link-lib=Qt5Widgets");
+  println!("cargo:rustc-link-lib=Qt5Core");
 
   println!("cargo:rerun-if-changed=wrapper.h");
 

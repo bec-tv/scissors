@@ -1,0 +1,41 @@
+name: build
+
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v2
+    - name: Cache cargo registry
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/registry
+        key: windows-cargo-registry-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo index
+      uses: actions/cache@v1
+      with:
+        path: ~/.cargo/git
+        key: windows-cargo-index-${{ hashFiles('**/Cargo.lock') }}
+    - name: Cache cargo build
+      uses: actions/cache@v1
+      with:
+        path: target
+        key: windows-cargo-build-target-${{ hashFiles('**/Cargo.lock') }}
+    - name: Install latest nightly
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: nightly
+        default: true
+    - name: Build dependencies
+      run: python tools/build.py build
+    - name: Build
+      uses: actions-rs/cargo@v1
+      with:
+        command: build
+        args: --release -Z unstable-options --out-dir build/bin/64bit
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v1
+      with:
+        name: scissors
+        path: build
