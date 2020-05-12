@@ -6,6 +6,7 @@ use std::io::prelude::*;
 use serde::Deserialize;
 use tempfile::tempdir;
 use scraper::{Html, Selector};
+use fs_extra::dir::{copy, CopyOptions};
 use chrono::{DateTime, Local, Duration};
 use winit::{
   event::{Event, WindowEvent},
@@ -154,14 +155,23 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
     println!("{:?}", Local::now().signed_duration_since(summary.end));
 
     let mut path = dirs::document_dir().unwrap();
+    let mut folder_path = path.clone();
     path.push("scissors-templates");
+    folder_path.push("scissors-templates");
     if !path.exists() {
       create_dir(path.clone())?
     }
 
+    let folder_name;
     if is_4by3 {
+      folder_name = "default-4x3";
+      path.push("default-4x3");
+      folder_path.push("default-4x3");
       path.push("default-4x3.html");
     } else {
+      folder_name = "default-16x9";
+      path.push("default-16x9");
+      folder_path.push("default-16x9");
       path.push("default-16x9.html");
     }
 
@@ -170,12 +180,17 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
     if path.exists() {
       let scene = Scene::new("main scene")?;
 
+      let opt = CopyOptions::new();
+      copy(folder_path, dir.path(), &opt)?;
+
       let mut html = String::new();
       File::open(path)?.read_to_string(&mut html)?;
       html = html.replace("{{cg_title}}", &show.cg_title);
       html = html.replace("{{event_date}}", &show.event_date.format("%B %d, %Y").to_string());
 
-      let mut f = File::create(dir.path().join("template.html"))?;
+      let template_name = dir.path().join(folder_name).join("template.html");
+
+      let mut f = File::create(&template_name)?;
       f.write_all(html.as_bytes())?;
 
       let mut x = 0.0;
@@ -183,8 +198,10 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
       let mut width = 0.0;
       let mut height = 0.0;
 
-      let document = Html::parse_document(&html);
-      let selector = Selector::parse("#VIDEO > rect").unwrap();
+      let mut svg = String::new();
+      File::open(dir.path().join(folder_name).join(format!("{}.svg", folder_name)))?.read_to_string(&mut svg)?;
+      let document = Html::parse_fragment(&svg);
+      let selector = Selector::parse("#VIDEO_1_ > rect").unwrap();
       let element = document.select(&selector).next();
       if let Some(element) = element {
         x = element.value().attr("x").unwrap().parse::<f32>().unwrap();
@@ -195,7 +212,7 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
 
       let settings = Data::new()?;
       settings.set_bool("is_local_file", true)?;
-      settings.set_string("local_file", dir.path().join("template.html").to_str().unwrap())?;
+      settings.set_string("local_file", template_name.to_str().unwrap())?;
       settings.set_int("width", 1920)?;
       settings.set_int("height", 1080)?;
       let bg_source = Source::new("browser_source", "background", Some(&settings), None)?;
