@@ -122,7 +122,7 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
   loop {
     let resp = reqwest::blocking::get("https://cablecast.bectv.org/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile&limit_per_channel=1")?
       .json::<EventSummaries>()?;
-    
+
     println!("{:?}", resp);
 
     let summary = resp.event_summaries.iter().find(|x| x.location == 22 && x.channel == 1).ok_or(EventSummaryMissing)?;
@@ -448,7 +448,7 @@ fn main() -> Result<(), Box<dyn Error>> {
           event: WindowEvent::CloseRequested,
           window_id,
         } if window_id == window.id() => *control_flow = ControlFlow::Exit,
-        
+
         Event::WindowEvent {
           event: WindowEvent::Resized(size),
           window_id,
