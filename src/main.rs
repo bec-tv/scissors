@@ -116,7 +116,7 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
   loop {
     let resp = reqwest::blocking::get("https://cablecast.bectv.org/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile&limit_per_channel=1")?
       .json::<EventSummaries>()?;
-    
+
     println!("{:?}", resp);
 
     let summary = resp.event_summaries.iter().find(|x| x.location == 22 && x.channel == 1).ok_or(EventSummaryMissing)?;
@@ -263,6 +263,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     obs::load_all_modules();
     obs::post_load_modules();
 
+    std::thread::sleep_ms(1000);
+
     let vi_source = Source::new("decklink-input", "video", None, None);
     let vi_source = if let Ok(vi_source) = vi_source {
       let props = vi_source.properties()?;
@@ -273,13 +275,13 @@ fn main() -> Result<(), Box<dyn Error>> {
             println!("{}", prop.list_item_name(i)?);
             println!("{}", prop.list_item_string(i)?);
           }
-    
+
           let dname = prop.list_item_name(1)?;
           let dstr = prop.list_item_string(1)?;
-    
+
           println!("Using: {}", dname);
           println!("Using: {}", dstr);
-    
+
           let settings = Data::new()?;
           settings.set_string("device_name", dname)?;
           settings.set_string("device_hash", dstr)?;
@@ -287,16 +289,16 @@ fn main() -> Result<(), Box<dyn Error>> {
           settings.set_int("mode_id", -1)?;
           settings.set_int("audio_connection", 1)?;
           settings.set_int("video_connection", 1)?;
-          
+
           vi_source.update(Some(&settings));
-  
+
           vi_source
         } else {
           let settings = Data::new()?;
           settings.set_string("file", "../../../1080img.jpg")?;
 
           Source::new("image_source", "video", Some(&settings), None)?
-        }        
+        }
       } else {
         let settings = Data::new()?;
         settings.set_string("file", "../../../1080img.jpg")?;
@@ -421,7 +423,7 @@ fn main() -> Result<(), Box<dyn Error>> {
           event: WindowEvent::CloseRequested,
           window_id,
         } if window_id == window.id() => *control_flow = ControlFlow::Exit,
-        
+
         Event::WindowEvent {
           event: WindowEvent::Resized(size),
           window_id,
