@@ -1,12 +1,12 @@
 use std::fmt;
 use std::error::Error;
-use serde::Deserialize;
 use std::os::raw::c_char;
 use std::fs::{File, create_dir};
-use tempfile::tempdir;
 use std::io::prelude::*;
+use serde::Deserialize;
+use tempfile::tempdir;
 use scraper::{Html, Selector};
-use chrono::{Date, DateTime, Local, Duration};
+use chrono::{DateTime, Local, Duration};
 use winit::{
   event::{Event, WindowEvent},
   event_loop::{ControlFlow, EventLoop},
@@ -49,6 +49,12 @@ struct Show {
 struct DigitalFile {
   show: i64,
   aspect_ratio: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct Settings {
+  input: String,
+  output: String,
 }
 
 #[derive(Debug, Clone)]
@@ -263,53 +269,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     obs::load_all_modules();
     obs::post_load_modules();
 
-    let vi_source = Source::new("decklink-input", "video", None, None);
-    let vi_source = if let Ok(vi_source) = vi_source {
-      let props = vi_source.properties()?;
-      let prop = props.get("device_hash");
-      if let Ok(prop) = prop {
-        if prop.list_item_count() != 1 {
-          for i in 0..prop.list_item_count() {
-            println!("{}", prop.list_item_name(i)?);
-            println!("{}", prop.list_item_string(i)?);
-          }
-    
-          let dname = prop.list_item_name(1)?;
-          let dstr = prop.list_item_string(1)?;
-    
-          println!("Using: {}", dname);
-          println!("Using: {}", dstr);
-    
-          let settings = Data::new()?;
-          settings.set_string("device_name", dname)?;
-          settings.set_string("device_hash", dstr)?;
-          settings.set_string("mode_name", "Auto")?;
-          settings.set_int("mode_id", -1)?;
-          settings.set_int("audio_connection", 1)?;
-          settings.set_int("video_connection", 1)?;
-          
-          vi_source.update(Some(&settings));
-  
-          vi_source
-        } else {
-          let settings = Data::new()?;
-          settings.set_string("file", "../../../1080img.jpg")?;
-
-          Source::new("image_source", "video", Some(&settings), None)?
-        }        
-      } else {
-        let settings = Data::new()?;
-        settings.set_string("file", "../../../1080img.jpg")?;
-
-        Source::new("image_source", "video", Some(&settings), None)?
-      }
-    } else {
-      let settings = Data::new()?;
-      settings.set_string("file", "../../../1080img.jpg")?;
-
-      Source::new("image_source", "video", Some(&settings), None)?
-    };
-
     // let item = item.clone();
     // let filter = filter.map_or(None, |x| Some(x.clone()));
     // std::thread::spawn(move || {
@@ -360,6 +319,66 @@ fn main() -> Result<(), Box<dyn Error>> {
     //   }
     // });
 
+    let mut config: Option<Settings> = None;
+    let mut path = dirs::document_dir().unwrap();
+    path.push("scissors-config.json");
+    if path.exists() {
+      config = Some(serde_json::from_reader(File::open(path)?)?);
+    }
+
+    let vi_source = Source::new("decklink-input", "video", None, None);
+    let vi_source = if let Ok(vi_source) = vi_source {
+      let props = vi_source.properties()?;
+      let prop = props.get("device_hash");
+      if let Ok(prop) = prop {
+        if prop.list_item_count() != 1 {
+          for i in 0..prop.list_item_count() {
+            println!("{}", prop.list_item_name(i)?);
+            println!("{}", prop.list_item_string(i)?);
+          }
+    
+          let dname = prop.list_item_name(1)?;
+          let mut dstr = prop.list_item_string(1)?.to_string();
+    
+          println!("Using if config not set: {}", dname);
+          println!("Using if config not set: {}", dstr);
+    
+          if let Some(config) = config.as_ref() {
+            dstr = config.input.clone();
+          }
+
+          println!("Using: {}", dstr);
+
+          let settings = Data::new()?;
+          // settings.set_string("device_name", dname)?;
+          settings.set_string("device_hash", &dstr)?;
+          settings.set_string("mode_name", "Auto")?;
+          settings.set_int("mode_id", -1)?;
+          settings.set_int("audio_connection", 1)?;
+          settings.set_int("video_connection", 1)?;
+          
+          vi_source.update(Some(&settings));
+  
+          vi_source
+        } else {
+          let settings = Data::new()?;
+          settings.set_string("file", "../../../1080img.jpg")?;
+
+          Source::new("image_source", "video", Some(&settings), None)?
+        }        
+      } else {
+        let settings = Data::new()?;
+        settings.set_string("file", "../../../1080img.jpg")?;
+
+        Source::new("image_source", "video", Some(&settings), None)?
+      }
+    } else {
+      let settings = Data::new()?;
+      settings.set_string("file", "../../../1080img.jpg")?;
+
+      Source::new("image_source", "video", Some(&settings), None)?
+    };
+
     let output = Output::new("decklink_output", "decklink output", None, None);
     if let Ok(output) = output {
       let props = vi_source.properties()?;
@@ -372,14 +391,20 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
 
         let dname = prop.list_item_name(prop_count - 1)?;
-        let dstr = prop.list_item_string(prop_count - 1)?;
+        let mut dstr = prop.list_item_string(prop_count - 1)?.to_string();
 
-        println!("Output using: {}", dname);
+        println!("Output using if config not set: {}", dname);
+        println!("Output using if config not set: {}", dstr);
+
+        if let Some(config) = config {
+          dstr = config.output;
+        }
+
         println!("Output using: {}", dstr);
 
         let settings = Data::new()?;
-        settings.set_string("device_name", dname)?;
-        settings.set_string("device_hash", dstr)?;
+        // settings.set_string("device_name", dname)?;
+        settings.set_string("device_hash", &dstr)?;
         settings.set_string("mode_name", "1080i59.94")?;
         settings.set_int("mode_id", 12)?;
 
@@ -409,7 +434,7 @@ fn main() -> Result<(), Box<dyn Error>> {
       num_backbuffers: 0,
     })), 0xBABABA)?;
 
-    display.add_draw_callback(&mut |x, y| {
+    display.add_draw_callback(&mut |_x, _y| {
       obs::render_main_texture();
     });
 
@@ -437,10 +462,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     });
   }
 
-  unsafe {
-    obs::obs_shutdown();
-    println!("remaining allocs {:?}", obs::bnum_allocs());
-  }
+  // unsafe {
+  //   obs::obs_shutdown();
+  //   println!("remaining allocs {:?}", obs::bnum_allocs());
+  // }
 
-  Ok(())
+  // Ok(())
 }
