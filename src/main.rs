@@ -319,6 +319,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     //   }
     // });
 
+    std::thread::sleep_ms(1000);
+
     let mut config: Option<Settings> = None;
     let mut path = dirs::document_dir().unwrap();
     path.push("scissors-config.json");
