@@ -3,7 +3,7 @@ use std::error::Error;
 use std::os::raw::c_char;
 use std::fs::{File, create_dir};
 use std::io::prelude::*;
-use serde::Deserialize;
+use serde::{Serialize, Deserialize};
 use tempfile::tempdir;
 use scraper::{Html, Selector};
 use fs_extra::dir::{copy, CopyOptions};
@@ -18,6 +18,20 @@ use winit::{
 
 mod obs;
 use obs::{Scene, Source, Data, Output};
+
+#[derive(Debug, Deserialize, Clone)]
+struct Settings {
+  decklink_input: Option<String>,
+  decklink_output: Option<String>,
+  location: i64,
+  channel: i64,
+  output: i64,
+  device: i64,
+  project: i64,
+  username: String,
+  password: String,
+}
+
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -42,6 +56,7 @@ struct EventSummary {
 struct Show {
   id: i64,
   cg_title: String,
+  project: Option<i64>,
   event_date: DateTime<Local>,
 }
 
@@ -52,10 +67,32 @@ struct DigitalFile {
   aspect_ratio: i64,
 }
 
-#[derive(Debug, Deserialize)]
-struct Settings {
-  input: String,
-  output: String,
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ForceEvents {
+  force_events: Vec<ForceEvent>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ForceEvent {
+  switch_event: Option<SwitchEvent>,
+  automation_override: Option<AutomationOverride>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct SwitchEvent {
+  device: i64,
+  output: i64,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct AutomationOverride {
+  r#override: bool,
+  output: i64,
+  do_last_switch_on_resume: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -103,14 +140,25 @@ impl Error for DigitalFileMissing {
   }
 }
 
-fn display_text(string: &str) -> Result<(), Box<dyn Error>> {
-  let scene = Scene::new("main scene")?;
+#[derive(Debug, Clone)]
+pub struct ForceEventFailed;
 
-  let settings = Data::new()?;
-  settings.set_string("text", string)?;
-  let source = Source::new("text_gdiplus", "error text", Some(&settings), None)?;
+impl fmt::Display for ForceEventFailed {
+  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+    write!(f, "the force event call failed")
+  }
+}
 
-  let item = scene.add(&source)?;
+impl Error for ForceEventFailed {
+  fn source(&self) -> Option<&(dyn Error + 'static)> {
+    None
+  }
+}
+
+fn fallback(vi_source: &Source) -> Result<(), Box<dyn Error>> {
+  let scene = Scene::new("fallback scene")?;
+
+  let item = scene.add(vi_source)?;
   item.set_scale(1.0, 1.0);
   item.set_pos(0.0, 0.0);
 
@@ -119,34 +167,46 @@ fn display_text(string: &str) -> Result<(), Box<dyn Error>> {
   Ok(())
 }
 
-fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
+fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>> {
   loop {
-    let resp = reqwest::blocking::get("https://cablecast.bectv.org/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile&limit_per_channel=1")?
-      .json::<EventSummaries>()?;
+    let resp = reqwest::blocking::get("https://cablecast.bectv.org/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile%2Cmedia%2Creel&limit_per_channel=1")?.json::<EventSummaries>()?;
 
     println!("{:?}", resp);
 
-    let summary = resp.event_summaries.iter().find(|x| x.location == 22 && x.channel == 1).ok_or(EventSummaryMissing)?;
+    let summary = resp.event_summaries.iter().find(|x| x.location == config.location && x.channel == config.channel).ok_or(EventSummaryMissing)?;
     let show = resp.shows.iter().find(|x| x.id == summary.show).ok_or(ShowMissing)?;
     let file = resp.digital_files.iter().find(|x| x.show == summary.show).ok_or(DigitalFileMissing)?;
-
+   
     let is_4by3 = file.aspect_ratio == 1;
+    // let is_4by3 = true;
 
     println!("{:?}", summary);
     println!("{:?}", show);
     println!("{:?}", file);
 
+    if show.project != Some(config.project) {
+      fallback(vi_source)?;
+
+      println!("wrong format for show {}", show.id);
+      println!("sleeping for 5 minutes");
+      println!("Next show at {}", summary.start.to_rfc2822());
+      std::thread::sleep(Duration::minutes(5).to_std()?);
+      continue;
+    }
+
     let time_to_show = Local::now().signed_duration_since::<Local>(summary.start + Duration::seconds(-20)).num_seconds();
     if time_to_show > -300 && time_to_show < -10 {
-      display_text(&format!("Next show at {}", summary.start.to_rfc2822()))?;
+      fallback(vi_source)?;
 
       println!("sleeping until start");
+      println!("Next show at {}", summary.start.to_rfc2822());
       let duration = summary.start.signed_duration_since(Local::now()) + Duration::seconds(-20);
       std::thread::sleep(duration.to_std()?);
     } else if time_to_show < -10 {
-      display_text(&format!("Next show at {}", summary.start.to_rfc2822()))?;
+      fallback(vi_source)?;
 
       println!("sleeping for 5 minutes");
+      println!("Next show at {}", summary.start.to_rfc2822());
       std::thread::sleep(Duration::minutes(5).to_std()?);
       continue;
     }
@@ -201,7 +261,7 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
       let mut svg = String::new();
       File::open(dir.path().join(folder_name).join(format!("{}.svg", folder_name)))?.read_to_string(&mut svg)?;
       let document = Html::parse_fragment(&svg);
-      let selector = Selector::parse("#VIDEO_1_ > rect").unwrap();
+      let selector = Selector::parse("#VIDEO").unwrap();
       let element = document.select(&selector).next();
       if let Some(element) = element {
         x = element.value().attr("x").unwrap().parse::<f32>().unwrap();
@@ -231,12 +291,104 @@ fn show_loop(vi_source: Source) -> Result<(), Box<dyn Error>> {
 
       obs::set_output_source(0, &scene.get_source()?);
     } else {
-      display_text(&format!("Error: Could not find {}", path.to_str().unwrap()))?;
+      fallback(&vi_source)?;
+      println!("Error: Could not find {}", path.to_str().unwrap());
+    }
+
+    let time_to_show = Local::now().signed_duration_since::<Local>(summary.start).num_seconds();
+    if time_to_show >= 0 {
+      std::thread::sleep(Duration::seconds(1).to_std()?);
+
+      let force_events = ForceEvents {
+        force_events: vec![ForceEvent {
+          switch_event: Some(SwitchEvent {
+            device: config.device,
+            output: config.output,
+          }),
+          automation_override: None,
+        }],
+      };
+
+      let client = reqwest::blocking::Client::new();
+      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+        .basic_auth(&config.username, Some(&config.password))
+        .json(&force_events)
+        .send()?;
+
+      if !resp.status().is_success() {
+        return Err(Box::new(ForceEventFailed));
+      }
+    } else {
+      let client = reqwest::blocking::Client::new();
+
+      let force_events = ForceEvents {
+        force_events: vec![ForceEvent {
+          switch_event: None,
+          automation_override: Some(AutomationOverride {
+            r#override: true,
+            output: config.output,
+            do_last_switch_on_resume: false,
+          }),
+        }],
+      };
+
+      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+        .basic_auth(&config.username, Some(&config.password))
+        .json(&force_events)
+        .send()?;
+
+      if !resp.status().is_success() {
+        return Err(Box::new(ForceEventFailed));
+      }
+
+      let until_start = summary.start.signed_duration_since(Local::now());
+      std::thread::sleep(until_start.to_std()?);
+
+      let force_events = ForceEvents {
+        force_events: vec![ForceEvent {
+          switch_event: Some(SwitchEvent {
+            device: config.device,
+            output: config.output,
+          }),
+          automation_override: None,
+        }],
+      };
+
+      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+        .basic_auth(&config.username, Some(&config.password))
+        .json(&force_events)
+        .send()?;
+
+      if !resp.status().is_success() {
+        return Err(Box::new(ForceEventFailed));
+      }
+
+      std::thread::sleep(Duration::seconds(10).to_std()?);
+
+      let force_events = ForceEvents {
+        force_events: vec![ForceEvent {
+          switch_event: None,
+          automation_override: Some(AutomationOverride {
+            r#override: false,
+            output: config.output,
+            do_last_switch_on_resume: false,
+          }),
+        }],
+      };
+
+      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+        .basic_auth(&config.username, Some(&config.password))
+        .json(&force_events)
+        .send()?;
+
+      if !resp.status().is_success() {
+        return Err(Box::new(ForceEventFailed));
+      }
     }
 
     println!("sleeping until end");
-    let duration = summary.end.signed_duration_since(Local::now()) + Duration::seconds(10);
-    std::thread::sleep(duration.to_std()?);
+    let until_end = summary.end.signed_duration_since(Local::now()) + Duration::seconds(10);
+    std::thread::sleep(until_end.to_std()?);
   }
 }
 
@@ -336,14 +488,15 @@ fn main() -> Result<(), Box<dyn Error>> {
     //   }
     // });
 
-    std::thread::sleep_ms(1000);
+    std::thread::sleep(Duration::seconds(1).to_std()?);
 
-    let mut config: Option<Settings> = None;
     let mut path = dirs::document_dir().unwrap();
     path.push("scissors-config.json");
-    if path.exists() {
-      config = Some(serde_json::from_reader(File::open(path)?)?);
+    if !path.exists() {
+      panic!("Could not find config file");
     }
+
+    let config: Settings = serde_json::from_reader(File::open(path)?)?;
 
     let vi_source = Source::new("decklink-input", "video", None, None);
     let vi_source = if let Ok(vi_source) = vi_source {
@@ -362,8 +515,8 @@ fn main() -> Result<(), Box<dyn Error>> {
           println!("Using if config not set: {}", dname);
           println!("Using if config not set: {}", dstr);
     
-          if let Some(config) = config.as_ref() {
-            dstr = config.input.clone();
+          if let Some(input) = &config.decklink_input {
+            dstr = input.clone();
           }
 
           println!("Using: {}", dstr);
@@ -415,8 +568,8 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Output using if config not set: {}", dname);
         println!("Output using if config not set: {}", dstr);
 
-        if let Some(config) = config {
-          dstr = config.output;
+        if let Some(output) = &config.decklink_output {
+          dstr = output.clone();
         }
 
         println!("Output using: {}", dstr);
@@ -433,8 +586,19 @@ fn main() -> Result<(), Box<dyn Error>> {
       }
     }
 
+    let config = config.clone();
     std::thread::spawn(move || {
-      show_loop(vi_source).unwrap();
+      loop {
+        let res = show_loop(&vi_source, &config);
+        if let Err(err) = res {
+          if let Err(err) = fallback(&vi_source) {
+            println!("Fallback failed! {}", err);
+          }
+          println!("Error: {}", err);
+          println!("Waiting for 1 minute");
+          std::thread::sleep(Duration::minutes(1).to_std().unwrap());
+        }
+      }
     });
 
     let event_loop = EventLoop::new();
