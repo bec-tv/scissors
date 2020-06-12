@@ -405,6 +405,12 @@ impl Output {
       obs_output_start(self.ptr)
     }
   }
+
+  pub fn force_stop(&self) {
+    unsafe {
+      obs_output_force_stop(self.ptr)
+    }
+  }
 }
 
 impl From<*mut obs_output_t> for Output {

@@ -3,6 +3,7 @@ use std::error::Error;
 use std::os::raw::c_char;
 use std::fs::{File, create_dir};
 use std::io::prelude::*;
+use std::collections::HashSet;
 use serde::{Serialize, Deserialize};
 use tempfile::tempdir;
 use scraper::{Html, Selector};
@@ -27,7 +28,7 @@ struct Settings {
   channel: i64,
   output: i64,
   device: i64,
-  project: i64,
+  projects: HashSet::<i64>,
   username: String,
   password: String,
 }
@@ -184,7 +185,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
     println!("{:?}", show);
     println!("{:?}", file);
 
-    if show.project != Some(config.project) {
+    if !config.projects.contains(&show.project.unwrap_or(-1)) {
       fallback(vi_source)?;
 
       println!("wrong format for show {}", show.id);
@@ -223,16 +224,17 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
     }
 
     let folder_name;
+    let project = show.project.unwrap();
     if is_4by3 {
-      folder_name = "default-4x3";
-      path.push("default-4x3");
-      folder_path.push("default-4x3");
-      path.push("default-4x3.html");
+      folder_name = format!("{}-4x3", project);
+      path.push(format!("{}-4x3", project));
+      folder_path.push(format!("{}-4x3", project));
+      path.push(format!("{}-4x3.html", project));
     } else {
-      folder_name = "default-16x9";
-      path.push("default-16x9");
-      folder_path.push("default-16x9");
-      path.push("default-16x9.html");
+      folder_name = format!("{}-16x9", project);
+      path.push(format!("{}-16x9", project));
+      folder_path.push(format!("{}-16x9", project));
+      path.push(format!("{}-16x9.html", project));
     }
 
     let dir = tempdir()?;
@@ -248,7 +250,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
       html = html.replace("{{cg_title}}", &show.cg_title);
       html = html.replace("{{event_date}}", &show.event_date.format("%B %d, %Y").to_string());
 
-      let template_name = dir.path().join(folder_name).join("template.html");
+      let template_name = dir.path().join(&folder_name).join("template.html");
 
       let mut f = File::create(&template_name)?;
       f.write_all(html.as_bytes())?;
@@ -259,7 +261,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
       let mut height = 0.0;
 
       let mut svg = String::new();
-      File::open(dir.path().join(folder_name).join(format!("{}.svg", folder_name)))?.read_to_string(&mut svg)?;
+      File::open(dir.path().join(&folder_name).join(format!("{}.svg", folder_name)))?.read_to_string(&mut svg)?;
       let document = Html::parse_fragment(&svg);
       let selector = Selector::parse("#VIDEO").unwrap();
       let element = document.select(&selector).next();
@@ -498,105 +500,33 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let config: Settings = serde_json::from_reader(File::open(path)?)?;
 
-    let vi_source = Source::new("decklink-input", "video", None, None);
-    let vi_source = if let Ok(vi_source) = vi_source {
-      let props = vi_source.properties()?;
-      let prop = props.get("device_hash");
-      if let Ok(prop) = prop {
-        if prop.list_item_count() != 1 {
-          for i in 0..prop.list_item_count() {
-            println!("{}", prop.list_item_name(i)?);
-            println!("{}", prop.list_item_string(i)?);
-          }
-    
-          let dname = prop.list_item_name(1)?;
-          let mut dstr = prop.list_item_string(1)?.to_string();
-    
-          println!("Using if config not set: {}", dname);
-          println!("Using if config not set: {}", dstr);
-    
-          if let Some(input) = &config.decklink_input {
-            dstr = input.clone();
-          }
-
-          println!("Using: {}", dstr);
-
-          let settings = Data::new()?;
-          // settings.set_string("device_name", dname)?;
-          settings.set_string("device_hash", &dstr)?;
-          settings.set_string("mode_name", "Auto")?;
-          settings.set_int("mode_id", -1)?;
-          settings.set_int("audio_connection", 1)?;
-          settings.set_int("video_connection", 1)?;
-          
-          vi_source.update(Some(&settings));
-  
-          vi_source
-        } else {
-          let settings = Data::new()?;
-          settings.set_string("file", "../../../1080img.jpg")?;
-
-          Source::new("image_source", "video", Some(&settings), None)?
-        }        
-      } else {
-        let settings = Data::new()?;
-        settings.set_string("file", "../../../1080img.jpg")?;
-
-        Source::new("image_source", "video", Some(&settings), None)?
-      }
-    } else {
-      let settings = Data::new()?;
-      settings.set_string("file", "../../../1080img.jpg")?;
-
-      Source::new("image_source", "video", Some(&settings), None)?
-    };
-
-    let output = Output::new("decklink_output", "decklink output", None, None);
-    if let Ok(output) = output {
-      let props = vi_source.properties()?;
-      let prop = props.get("device_hash");
-      if let Ok(prop) = prop {
-        let prop_count = prop.list_item_count();
-        for i in 0..prop_count {
-          println!("{}", prop.list_item_name(i)?);
-          println!("{}", prop.list_item_string(i)?);
-        }
-
-        let dname = prop.list_item_name(prop_count - 1)?;
-        let mut dstr = prop.list_item_string(prop_count - 1)?.to_string();
-
-        println!("Output using if config not set: {}", dname);
-        println!("Output using if config not set: {}", dstr);
-
-        if let Some(output) = &config.decklink_output {
-          dstr = output.clone();
-        }
-
-        println!("Output using: {}", dstr);
-
-        let settings = Data::new()?;
-        // settings.set_string("device_name", dname)?;
-        settings.set_string("device_hash", &dstr)?;
-        settings.set_string("mode_name", "1080i59.94")?;
-        settings.set_int("mode_id", 12)?;
-
-        output.update(Some(&settings));
-
-        assert!(output.start());
-      }
-    }
-
-    let config = config.clone();
     std::thread::spawn(move || {
+      let mut io = setup_io(&config);
+
       loop {
-        let res = show_loop(&vi_source, &config);
-        if let Err(err) = res {
-          if let Err(err) = fallback(&vi_source) {
-            println!("Fallback failed! {}", err);
+        if let Ok((_, Some(output))) = &io {
+          output.force_stop();
+        }
+
+        io = setup_io(&config);
+
+        if let Ok((vi_source, output)) = &io {
+          let res = show_loop(&vi_source, &config);
+          if let Err(err) = res {
+            if let Err(err) = fallback(&vi_source) {
+              println!("Fallback failed! {}", err);
+            }
+            println!("Error: {}", err);
+            println!("Waiting for 1 minute");
+            std::thread::sleep(Duration::minutes(1).to_std().unwrap());
+            continue;
           }
+        } else if let Err(err) = &io {
+          println!("I/O setup failed!");
           println!("Error: {}", err);
           println!("Waiting for 1 minute");
           std::thread::sleep(Duration::minutes(1).to_std().unwrap());
+          continue;
         }
       }
     });
@@ -651,4 +581,96 @@ fn main() -> Result<(), Box<dyn Error>> {
   // }
 
   // Ok(())
+}
+
+fn setup_io(config: &Settings) -> Result<(Source, Option<Output>), Box<dyn Error>> {
+  let vi_source = Source::new("decklink-input", "video", None, None);
+  let vi_source = if let Ok(vi_source) = vi_source {
+    let props = vi_source.properties()?;
+    let prop = props.get("device_hash");
+    if let Ok(prop) = prop {
+      if prop.list_item_count() != 1 {
+        for i in 0..prop.list_item_count() {
+          println!("{}", prop.list_item_name(i)?);
+          println!("{}", prop.list_item_string(i)?);
+        }
+  
+        let dname = prop.list_item_name(1)?;
+        let mut dstr = prop.list_item_string(1)?.to_string();
+  
+        println!("Using if config not set: {}", dname);
+        println!("Using if config not set: {}", dstr);
+  
+        if let Some(input) = &config.decklink_input {
+          dstr = input.clone();
+        }
+
+        println!("Using: {}", dstr);
+
+        let settings = Data::new()?;
+        // settings.set_string("device_name", dname)?;
+        settings.set_string("device_hash", &dstr)?;
+        settings.set_string("mode_name", "Auto")?;
+        settings.set_int("mode_id", -1)?;
+        settings.set_int("audio_connection", 1)?;
+        settings.set_int("video_connection", 1)?;
+        
+        vi_source.update(Some(&settings));
+
+        vi_source
+      } else {
+        let settings = Data::new()?;
+        settings.set_string("file", "../../../1080img.jpg")?;
+
+        Source::new("image_source", "video", Some(&settings), None)?
+      }        
+    } else {
+      let settings = Data::new()?;
+      settings.set_string("file", "../../../1080img.jpg")?;
+
+      Source::new("image_source", "video", Some(&settings), None)?
+    }
+  } else {
+    let settings = Data::new()?;
+    settings.set_string("file", "../../../1080img.jpg")?;
+
+    Source::new("image_source", "video", Some(&settings), None)?
+  };
+
+  let output = Output::new("decklink_output", "decklink output", None, None);
+  if let Ok(output) = &output {
+    let props = vi_source.properties()?;
+    let prop = props.get("device_hash");
+    if let Ok(prop) = prop {
+      let prop_count = prop.list_item_count();
+      for i in 0..prop_count {
+        println!("{}", prop.list_item_name(i)?);
+        println!("{}", prop.list_item_string(i)?);
+      }
+
+      let dname = prop.list_item_name(prop_count - 1)?;
+      let mut dstr = prop.list_item_string(prop_count - 1)?.to_string();
+
+      println!("Output using if config not set: {}", dname);
+      println!("Output using if config not set: {}", dstr);
+
+      if let Some(output) = &config.decklink_output {
+        dstr = output.clone();
+      }
+
+      println!("Output using: {}", dstr);
+
+      let settings = Data::new()?;
+      // settings.set_string("device_name", dname)?;
+      settings.set_string("device_hash", &dstr)?;
+      settings.set_string("mode_name", "1080i59.94")?;
+      settings.set_int("mode_id", 12)?;
+
+      output.update(Some(&settings));
+
+      assert!(output.start());
+    }
+  }
+
+  Ok((vi_source, output.ok()))
 }
