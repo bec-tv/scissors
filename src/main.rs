@@ -24,6 +24,7 @@ use obs::{Scene, Source, Data, Output};
 struct Settings {
   decklink_input: Option<String>,
   decklink_output: Option<String>,
+  cablecast_url: String,
   location: i64,
   channel: i64,
   output: i64,
@@ -170,14 +171,15 @@ fn fallback(vi_source: &Source) -> Result<(), Box<dyn Error>> {
 
 fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>> {
   loop {
-    let resp = reqwest::blocking::get("https://cablecast.bectv.org/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile%2Cmedia%2Creel&limit_per_channel=1")?.json::<EventSummaries>()?;
+    let url = format!("https://{}/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile%2Cmedia%2Creel&limit_per_channel=1", config.cablecast_url);
+    let resp = reqwest::blocking::get(url)?.json::<EventSummaries>()?;
 
     println!("{:?}", resp);
 
     let summary = resp.event_summaries.iter().find(|x| x.location == config.location && x.channel == config.channel).ok_or(EventSummaryMissing)?;
     let show = resp.shows.iter().find(|x| x.id == summary.show).ok_or(ShowMissing)?;
     let file = resp.digital_files.iter().find(|x| x.show == summary.show).ok_or(DigitalFileMissing)?;
-   
+
     let is_4by3 = file.aspect_ratio == 1;
     // let is_4by3 = true;
 
@@ -263,6 +265,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
       let mut svg = String::new();
       File::open(dir.path().join(&folder_name).join(format!("{}.svg", folder_name)))?.read_to_string(&mut svg)?;
       let document = Html::parse_fragment(&svg);
+      // println!("{:#?}", Selector::parse("#VIDEO"));
       let selector = Selector::parse("#VIDEO").unwrap();
       let element = document.select(&selector).next();
       if let Some(element) = element {
@@ -312,7 +315,8 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
       };
 
       let client = reqwest::blocking::Client::new();
-      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+      let url = format!("https://{}/CablecastAPI/v1/forceevents", config.cablecast_url);
+      let resp = client.post(&url)
         .basic_auth(&config.username, Some(&config.password))
         .json(&force_events)
         .send()?;
@@ -334,7 +338,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
         }],
       };
 
-      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+      let resp = client.post(&url)
         .basic_auth(&config.username, Some(&config.password))
         .json(&force_events)
         .send()?;
@@ -356,7 +360,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
         }],
       };
 
-      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+      let resp = client.post(&url)
         .basic_auth(&config.username, Some(&config.password))
         .json(&force_events)
         .send()?;
@@ -378,7 +382,7 @@ fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>
         }],
       };
 
-      let resp = client.post("https://cablecast.bectv.org/CablecastAPI/v1/forceevents")
+      let resp = client.post(&url)
         .basic_auth(&config.username, Some(&config.password))
         .json(&force_events)
         .send()?;
@@ -594,13 +598,13 @@ fn setup_io(config: &Settings) -> Result<(Source, Option<Output>), Box<dyn Error
           println!("{}", prop.list_item_name(i)?);
           println!("{}", prop.list_item_string(i)?);
         }
-  
+
         let dname = prop.list_item_name(1)?;
         let mut dstr = prop.list_item_string(1)?.to_string();
-  
+
         println!("Using if config not set: {}", dname);
         println!("Using if config not set: {}", dstr);
-  
+
         if let Some(input) = &config.decklink_input {
           dstr = input.clone();
         }
@@ -614,7 +618,7 @@ fn setup_io(config: &Settings) -> Result<(Source, Option<Output>), Box<dyn Error
         settings.set_int("mode_id", -1)?;
         settings.set_int("audio_connection", 1)?;
         settings.set_int("video_connection", 1)?;
-        
+
         vi_source.update(Some(&settings));
 
         vi_source
@@ -623,7 +627,7 @@ fn setup_io(config: &Settings) -> Result<(Source, Option<Output>), Box<dyn Error
         settings.set_string("file", "../../../1080img.jpg")?;
 
         Source::new("image_source", "video", Some(&settings), None)?
-      }        
+      }
     } else {
       let settings = Data::new()?;
       settings.set_string("file", "../../../1080img.jpg")?;
