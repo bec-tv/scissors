@@ -172,7 +172,7 @@ fn fallback(vi_source: &Source) -> Result<(), Box<dyn Error>> {
 fn show_loop(vi_source: &Source, config: &Settings) -> Result<(), Box<dyn Error>> {
   loop {
     let url = format!("https://{}/CablecastAPI/v1/eventsummaries?future=true&include=show%2Cdigitalfile%2Cmedia%2Creel&limit_per_channel=1", config.cablecast_url);
-    let resp = reqwest::blocking::get(url)?.json::<EventSummaries>()?;
+    let resp = reqwest::blocking::get(&url)?.json::<EventSummaries>()?;
 
     println!("{:?}", resp);
 
